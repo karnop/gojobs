@@ -1,0 +1,12 @@
+# Binaries built by Go
+/bin/
+/dist/
+main
+gojobs
+
+# Environment variables 
+.env
+
+# Editor directories
+.vscode/
+.idea/
