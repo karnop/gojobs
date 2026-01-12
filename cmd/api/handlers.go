@@ -1,9 +1,11 @@
 package main 
 
 import (
+	"strconv"
 	"encoding/json"
 	"net/http"
 	"github.com/karnop/gojobs/internal/data"
+	"database/sql"
 )
 
 
@@ -80,4 +82,43 @@ func (app *application) listJobsHandler(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
+}
+
+// getJobHandler fetches a single job by its Id
+func (app *application) getJobHandler(w http.ResponseWriter, r *http.Request) {
+	// extracting id from url path
+	idStr := r.PathValue("id")
+
+	// converting string id to integer
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id < 1 {
+		http.Error(w, "Invalid job Id", http.StatusBadRequest)
+		return
+	}
+
+	// sql query
+	query := `SELECT id, title, description, company, salary FROM jobs WHERE id = $1`
+	var job data.Job
+
+	err = app.DB.QueryRow(query, id).Scan(
+		&job.Id,
+        &job.Title,
+        &job.Description,
+        &job.Company,
+        &job.Salary,
+	)
+
+	// handle errors
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Job not found", http.StatusNotFound)
+		} else {
+			// log.Println(err)
+			http.Error(w, "Database error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(job)
 }

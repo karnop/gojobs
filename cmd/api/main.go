@@ -58,11 +58,14 @@ func main() {
 		fmt.Fprintf(w, "Welcome to the GoJobs API")
 	})
 
-	// GET /jobs -> calls listJobsHandler
+	// GET /jobs 
 	mux.HandleFunc("GET /jobs", app.listJobsHandler)
 
-	// POST /jobs -> calls createJobHandler
+	// POST /jobs
 	mux.HandleFunc("POST /jobs", app.createJobHandler)
+
+	// GET /job/id
+	mux.HandleFunc("GET /jobs/{id}", app.getJobHandler)
 
 	log.Printf("Server started on port %s", port)
 
