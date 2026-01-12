@@ -3,23 +3,12 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"time"
 	"github.com/karnop/gojobs/internal/data"
 )
 
-// jobs is our temporary in memory db
-var jobs = []data.Job{
-	{
-		Id:          "1",
-		Title:       "Software Engineer",
-		Description: "Go developer needed",
-		Company:     "Google",
-		Salary:      "$120,000",
-	},
-} 
 
 // createJobHandler handles POST request to add a new job
-func createJobHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) createJobHandler(w http.ResponseWriter, r *http.Request) {
 	// variable to hold the incoming data
 	var job data.Job
 
@@ -30,11 +19,21 @@ func createJobHandler(w http.ResponseWriter, r *http.Request) {
 		return 
 	}
 
-	// assigning a unique id using time
-	job.Id = time.Now().Format("20060102150405")
+	// SQL query (postgres)
+	// RETURNING id allows us to get the auto-generated ID back from SQLSERVER.
+	// $1, $2, $3, $4 are placeholders for the data to prevent SQL Injection.
+	query := `
+		INSERT INTO jobs (title, description, company, salary)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
+	`
 
-	// adding the new job to db
-	jobs = append(jobs, job)
+	// QueryRow executes a query that returns exactly one row (the ID).
+	err = app.DB.QueryRow(query, job.Title, job.Description, job.Company, job.Salary).Scan(&job.Id)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	// responding to the client
 	w.Header().Set("Content-Type", "application/json")
@@ -44,12 +43,40 @@ func createJobHandler(w http.ResponseWriter, r *http.Request) {
 
 
 // listjobshandler handles GET request to show all jobs
-func listJobsHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) listJobsHandler(w http.ResponseWriter, r *http.Request) {
+	// simple select
+	query := "SELECT id, title, description, company, salary FROM jobs"
+	rows, err := app.DB.Query(query)
+	if err != nil {
+		http.Error(w, "Database Error", http.StatusInternalServerError)
+		return
+	}
+	// closing rows to free up db connection 
+	defer rows.Close()
+
+	var jobs []data.Job
+	for rows.Next() {
+		var j data.Job
+		// Scan copies the columns from the current row into the values pointed at.
+		err := rows.Scan(&j.Id, &j.Title, &j.Description, &j.Company, &j.Salary)
+		if err != nil {
+			http.Error(w, "Error scanning database row", http.StatusInternalServerError)
+			return
+		}
+		jobs = append(jobs, j)
+	}
+
+	// errors that might have occurred during iteration
+	if err = rows.Err(); err != nil {
+		http.Error(w, "Database iteration error", http.StatusInternalServerError)
+		return
+	}	
+
 	// setting the header
 	w.Header().Set("Content-Type", "application/json")
 
 	// encoding jobs slice directly to the response writer
-	err := json.NewEncoder(w).Encode(jobs)
+	err = json.NewEncoder(w).Encode(jobs)
 	if err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}

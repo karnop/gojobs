@@ -4,12 +4,49 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"database/sql"
+	"github.com/joho/godotenv"
+	"os"
 )
+
+
+// defining a struct to hold application dependencies 
+// it makes the handlers cleaner because they can access the DB via this struct
+type application struct {
+	DB *sql.DB
+}
 
 // entry point of the application
 func main() {
-	// defining port here. in later iterations, will move it to env file
-	const port = ":8080"
+	// loading the env file
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("No .env file found, relying on system environment variables")
+	}
+
+	port := os.Getenv("port")
+	if port == "" {
+		log.Fatal("DB_DSN environment variable not set")
+	}
+
+	dsn := os.Getenv("DB_DSN")
+	if dsn == "" {
+		log.Fatal("DB_DSN environment variable not set")
+	}
+	log.Println("Connecting to Cloud Database...")
+
+	// calling helper function to open the connection
+	db, err := openDB(dsn)
+	if err != nil {
+		log.Fatalf("Cannot connect to database: %v", err)
+	}
+	defer db.Close()
+	log.Println("SUCCESS! Database connection established")
+
+
+	app := &application{
+		DB: db,
+	}
 
 	// NewServeMux is a request multiplier (router).
 	// It matches the URL of incoming request against a list of registered patterns
@@ -22,10 +59,10 @@ func main() {
 	})
 
 	// GET /jobs -> calls listJobsHandler
-	mux.HandleFunc("GET /jobs", listJobsHandler)
+	mux.HandleFunc("GET /jobs", app.listJobsHandler)
 
 	// POST /jobs -> calls createJobHandler
-	mux.HandleFunc("POST /jobs", createJobHandler)
+	mux.HandleFunc("POST /jobs", app.createJobHandler)
 
 	log.Printf("Server started on port %s", port)
 
