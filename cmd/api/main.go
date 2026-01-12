@@ -21,6 +21,12 @@ func main() {
 		fmt.Fprintf(w, "Welcome to the GoJobs API")
 	})
 
+	// GET /jobs -> calls listJobsHandler
+	mux.HandleFunc("GET /jobs", listJobsHandler)
+
+	// POST /jobs -> calls createJobHandler
+	mux.HandleFunc("POST /jobs", createJobHandler)
+
 	log.Printf("Server started on port %s", port)
 
 	// ListenAndServe starts an HTTP server with a given address and handler
