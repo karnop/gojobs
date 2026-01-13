@@ -7,8 +7,75 @@ import (
 	"github.com/karnop/gojobs/internal/data"
 	"github.com/karnop/gojobs/internal/validator"
 	"database/sql"
+	"errors"
 )
 
+// USER HANDLERS
+
+// registerUserHandler handles user signup
+func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Request) {
+	// struct to store incoming json
+	var input struct {
+		Name string `json:"name"`
+		Email string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	// decoding the request
+	err := json.NewDecoder(r.Body).Decode(&input)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// create the user struct
+	user := &data.User{
+		Name: input.Name,
+		Email: input.Email,
+		Role: "candidate",
+	}
+
+	// setting the password
+	err = user.Password.Set(input.Password)
+	if err != nil {
+		http.Error(w, "Server error", http.StatusInternalServerError)
+		return
+	}
+
+	// validating the data
+	v := validator.New()
+	data.ValidateUser(v, user)
+
+	if !v.Valid() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity) // 422
+		json.NewEncoder(w).Encode(v.Errors)
+		return
+	}
+
+	// insert into Database
+	err = app.Users.Insert(user)
+	if err != nil {
+		// checking for duplicates
+		if errors.Is(err, data.ErrDuplicateEmail) {
+			v.AddError("email", "a user with this email address already exists")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict) // 409
+			json.NewEncoder(w).Encode(v.Errors)
+		} else {
+			http.Error(w, "Database Error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// success
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(user)
+}
+
+
+// JOB HANDLERS
 
 // createJobHandler handles POST request to add a new job
 func (app *application) createJobHandler(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +121,6 @@ func (app *application) createJobHandler(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(job)
 }
-
 
 // listjobshandler handles GET request to show all jobs
 func (app *application) listJobsHandler(w http.ResponseWriter, r *http.Request) {
@@ -134,3 +200,4 @@ func (app *application) getJobHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(job)
 }
+

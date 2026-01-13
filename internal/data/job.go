@@ -7,11 +7,11 @@ import (
 // job represents a job posting in the application
 type Job struct {
 	// omitempty means if id is empty, hide it in JSON
-	Id string `json:"id,omitempty"` 
-	Title string `json:"title"`
+	Id          string `json:"id,omitempty"`
+	Title       string `json:"title"`
 	Description string `json:"description"`
-	Company string `json:"company"`
-	Salary string `json:"salary"`
+	Company     string `json:"company"`
+	Salary      int    `json:"salary"`
 }
 
 // ValidateJob checks if the Job struct is safe to insert
@@ -27,5 +27,5 @@ func ValidateJob(v *validator.Validator, job *Job) {
 	v.Check(job.Company != "", "company", "must be provided")
 
 	// Salary is required
-	v.Check(job.Salary != "", "salary", "must be provided")
+	v.Check(job.Salary >= 0, "salary", "must be a positive number")
 }
