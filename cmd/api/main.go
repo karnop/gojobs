@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"github.com/joho/godotenv"
 	"os"
+	"github.com/karnop/gojobs/internal/data"
 )
 
 
@@ -14,6 +15,7 @@ import (
 // it makes the handlers cleaner because they can access the DB via this struct
 type application struct {
 	DB *sql.DB
+	Users data.UserModel
 }
 
 // entry point of the application
@@ -46,6 +48,7 @@ func main() {
 
 	app := &application{
 		DB: db,
+		Users : data.UserModel{DB: db},
 	}
 
 	// NewServeMux is a request multiplier (router).
@@ -58,14 +61,11 @@ func main() {
 		fmt.Fprintf(w, "Welcome to the GoJobs API")
 	})
 
-	// GET /jobs 
 	mux.HandleFunc("GET /jobs", app.listJobsHandler)
-
-	// POST /jobs
 	mux.HandleFunc("POST /jobs", app.createJobHandler)
-
-	// GET /job/id
 	mux.HandleFunc("GET /jobs/{id}", app.getJobHandler)
+	mux.HandleFunc("POST /users", app.registerUserHandler)
+
 
 	log.Printf("Server started on port %s", port)
 
