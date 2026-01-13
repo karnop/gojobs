@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"github.com/karnop/gojobs/internal/data"
+	"github.com/karnop/gojobs/internal/validator"
 	"database/sql"
 )
 
@@ -19,6 +20,17 @@ func (app *application) createJobHandler(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return 
+	}
+
+	// validation logic
+	v := validator.New()
+	data.ValidateJob(v, &job) // v is already passed by reference
+
+	if !v.Valid() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		json.NewEncoder(w).Encode(v.Errors)
+		return
 	}
 
 	// SQL query (postgres)
