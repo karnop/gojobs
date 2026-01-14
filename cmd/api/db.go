@@ -1,4 +1,4 @@
-package main 
+package main
 
 import (
 	"database/sql"
@@ -6,10 +6,10 @@ import (
 )
 
 // openDB opens a connection to the database
-// param dsn : Data Source Name (The address string of the DB) 
+// param dsn : Data Source Name (The address string of the DB)
 // it returns a generic *sql.DB pool (The handle to use the DB) that is safe for concurrent use
 func openDB(dsn string) (*sql.DB, error) {
-	// open the connection 
+	// open the connection
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, err
