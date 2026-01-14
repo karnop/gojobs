@@ -6,12 +6,12 @@ import (
 	"errors"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn" // to handle Postgres specific errors
 	"github.com/karnop/gojobs/internal/validator"
 	"golang.org/x/crypto/bcrypt"
-	"github.com/jackc/pgx/v5/pgconn" // to handle Postgres specific errors
 )
 
-// custom error 
+// custom error
 var (
 	ErrDuplicateEmail = errors.New("duplicate email")
 )
@@ -29,7 +29,7 @@ type User struct {
 // password is a custom struct to handle hashing logic
 type password struct {
 	plaintext *string
-	hash []byte
+	hash      []byte
 }
 
 // set calculates the bcrypt hash of a plaintext password
@@ -70,7 +70,7 @@ func (m UserModel) GetByEmail(email string) (*User, error) {
 	`
 
 	var user User
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -95,6 +95,36 @@ func (m UserModel) GetByEmail(email string) (*User, error) {
 	return &user, nil
 }
 
+// Get retrieves a user by their id
+func (m UserModel) Get(id int) (*User, error) {
+	query := `
+        SELECT id, created_at, name, email, password_hash, role
+        FROM users
+        WHERE id = $1`
+
+    var user User
+    ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+    defer cancel()
+
+    err := m.DB.QueryRowContext(ctx, query, id).Scan(
+        &user.Id,
+        &user.CreatedAt,
+        &user.Name,
+        &user.Email,
+        &user.Password.hash,
+        &user.Role,
+    )
+
+    if err != nil {
+        if errors.Is(err, sql.ErrNoRows) {
+            return nil, errors.New("record not found")
+        }
+        return nil, err
+    }
+
+    return &user, nil
+}
+
 // insert adds a new user to the db
 func (m UserModel) Insert(user *User) error {
 	query := `
@@ -111,7 +141,7 @@ func (m UserModel) Insert(user *User) error {
 	err := m.DB.QueryRowContext(ctx, query, args...).Scan(&user.Id, &user.CreatedAt)
 	if err != nil {
 		// We use errors.As to check if the error is a specific Postgres error type
-		var pgErr *pgconn.PgError 
+		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			if pgErr.Code == "23505" { // Code "23505" is the official SQL State for "unique_violation"
 				return ErrDuplicateEmail
@@ -134,3 +164,6 @@ func ValidateUser(v *validator.Validator, user *User) {
 		v.Check(len(*user.Password.plaintext) >= 8, "password", "must be at least 8 bytes long")
 	}
 }
+
+
+

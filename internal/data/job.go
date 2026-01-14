@@ -12,6 +12,7 @@ type Job struct {
 	Description string `json:"description"`
 	Company     string `json:"company"`
 	Salary      int    `json:"salary"`
+	UserId      int    `json:"-"`
 }
 
 // ValidateJob checks if the Job struct is safe to insert

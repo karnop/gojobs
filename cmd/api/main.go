@@ -1,20 +1,19 @@
-package main 
+package main
 
 import (
+	"database/sql"
 	"fmt"
+	"github.com/joho/godotenv"
+	"github.com/karnop/gojobs/internal/data"
 	"log"
 	"net/http"
-	"database/sql"
-	"github.com/joho/godotenv"
 	"os"
-	"github.com/karnop/gojobs/internal/data"
 )
 
-
-// defining a struct to hold application dependencies 
+// defining a struct to hold application dependencies
 // it makes the handlers cleaner because they can access the DB via this struct
 type application struct {
-	DB *sql.DB
+	DB    *sql.DB
 	Users data.UserModel
 }
 
@@ -45,10 +44,9 @@ func main() {
 	defer db.Close()
 	log.Println("SUCCESS! Database connection established")
 
-
 	app := &application{
-		DB: db,
-		Users : data.UserModel{DB: db},
+		DB:    db,
+		Users: data.UserModel{DB: db},
 	}
 
 	// NewServeMux is a request multiplier (router).
@@ -62,11 +60,10 @@ func main() {
 	})
 
 	mux.HandleFunc("GET /jobs", app.listJobsHandler)
-	mux.HandleFunc("POST /jobs", app.createJobHandler)
+	mux.HandleFunc("POST /jobs", app.authenticate(app.createJobHandler))
 	mux.HandleFunc("GET /jobs/{id}", app.getJobHandler)
 	mux.HandleFunc("POST /users", app.registerUserHandler)
 	mux.HandleFunc("POST /users/login", app.loginUserHandler)
-
 
 	log.Printf("Server started on port %s", port)
 
