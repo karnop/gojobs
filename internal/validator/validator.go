@@ -7,7 +7,6 @@ import (
 // EmailRx is the standard regex for validating email formats
 var EmailRX = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
 
-
 // Validator contains a map of validation errors
 // the key is the field name, and the value is the error message
 type Validator struct {
@@ -15,13 +14,13 @@ type Validator struct {
 }
 
 func New() *Validator {
-	return &Validator {
+	return &Validator{
 		Errors: make(map[string]string),
 	}
 }
 
 // Valid returns true if the Errors map is empty
-func (v * Validator) Valid() bool {
+func (v *Validator) Valid() bool {
 	return len(v.Errors) == 0
 }
 

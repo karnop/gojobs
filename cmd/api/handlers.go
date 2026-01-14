@@ -1,16 +1,16 @@
-package main 
+package main
 
 import (
-	"strconv"
+	"database/sql"
 	"encoding/json"
-	"net/http"
+	"errors"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/karnop/gojobs/internal/data"
 	"github.com/karnop/gojobs/internal/validator"
-	"database/sql"
-	"errors"
+	"net/http"
 	"os"
+	"strconv"
 	"time"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 // USER HANDLERS
@@ -19,8 +19,8 @@ import (
 func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Request) {
 	// struct to store incoming json
 	var input struct {
-		Name string `json:"name"`
-		Email string `json:"email"`
+		Name     string `json:"name"`
+		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 
@@ -33,9 +33,9 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 
 	// create the user struct
 	user := &data.User{
-		Name: input.Name,
+		Name:  input.Name,
 		Email: input.Email,
-		Role: "candidate",
+		Role:  "candidate",
 	}
 
 	// setting the password
@@ -80,7 +80,7 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 // loginUserHandler used for user login
 func (app *application) loginUserHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 
@@ -95,31 +95,31 @@ func (app *application) loginUserHandler(w http.ResponseWriter, r *http.Request)
 	if input.Email == "" || input.Password == "" {
 		http.Error(w, "Email and Password required", http.StatusBadRequest)
 		return
-    }
+	}
 
 	// finding user
 	user, err := app.Users.GetByEmail(input.Email)
 	if err != nil {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
-        return
+		return
 	}
 
 	// check password
 	match, err := user.Password.Matches(input.Password)
 	if err != nil {
 		http.Error(w, "Server error", http.StatusInternalServerError)
-		return 
+		return
 	}
 	if !match {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
-		return 
+		return
 	}
 
 	// Generating JWT
 	claims := jwt.MapClaims{
-		"sub" : user.Id,
-		"role" : user.Role,
-		"exp" : time.Now().Add(time.Hour * 24).Unix(),
+		"sub":  user.Id,
+		"role": user.Role,
+		"exp":  time.Now().Add(time.Hour * 24).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
@@ -132,8 +132,8 @@ func (app *application) loginUserHandler(w http.ResponseWriter, r *http.Request)
 
 	// send token
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string {
-		"token" : tokenString,
+	json.NewEncoder(w).Encode(map[string]string{
+		"token": tokenString,
 	})
 }
 
@@ -145,10 +145,27 @@ func (app *application) createJobHandler(w http.ResponseWriter, r *http.Request)
 	var job data.Job
 
 	// decoding json body from request
-	err := json.NewDecoder(r.Body).Decode(&job) 
+	err := json.NewDecoder(r.Body).Decode(&job)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return 
+		return
+	}
+
+	// get user id from context
+	userId := r.Context().Value("userId").(int)
+	job.UserId = userId
+
+	// RBAC check
+	// only recruiters can post job
+	user, err := app.Users.Get(userId)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+        return
+	}
+
+	if user.Role != "recruiter" {
+		http.Error(w, "Forbidden: Only recruiters can post jobs", http.StatusForbidden) // 403
+        return
 	}
 
 	// validation logic
@@ -166,13 +183,13 @@ func (app *application) createJobHandler(w http.ResponseWriter, r *http.Request)
 	// RETURNING id allows us to get the auto-generated ID back from SQLSERVER.
 	// $1, $2, $3, $4 are placeholders for the data to prevent SQL Injection.
 	query := `
-		INSERT INTO jobs (title, description, company, salary)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO jobs (title, description, company, salary, user_id)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id
 	`
 
 	// QueryRow executes a query that returns exactly one row (the ID).
-	err = app.DB.QueryRow(query, job.Title, job.Description, job.Company, job.Salary).Scan(&job.Id)
+	err = app.DB.QueryRow(query, job.Title, job.Description, job.Company, job.Salary, job.UserId).Scan(&job.Id)
 	if err != nil {
 		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -193,7 +210,7 @@ func (app *application) listJobsHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Database Error", http.StatusInternalServerError)
 		return
 	}
-	// closing rows to free up db connection 
+	// closing rows to free up db connection
 	defer rows.Close()
 
 	var jobs []data.Job
@@ -212,7 +229,7 @@ func (app *application) listJobsHandler(w http.ResponseWriter, r *http.Request) 
 	if err = rows.Err(); err != nil {
 		http.Error(w, "Database iteration error", http.StatusInternalServerError)
 		return
-	}	
+	}
 
 	// setting the header
 	w.Header().Set("Content-Type", "application/json")
@@ -242,10 +259,10 @@ func (app *application) getJobHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = app.DB.QueryRow(query, id).Scan(
 		&job.Id,
-        &job.Title,
-        &job.Description,
-        &job.Company,
-        &job.Salary,
+		&job.Title,
+		&job.Description,
+		&job.Company,
+		&job.Salary,
 	)
 
 	// handle errors
@@ -262,4 +279,3 @@ func (app *application) getJobHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(job)
 }
-
