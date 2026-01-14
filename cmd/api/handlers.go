@@ -8,6 +8,9 @@ import (
 	"github.com/karnop/gojobs/internal/validator"
 	"database/sql"
 	"errors"
+	"os"
+	"time"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // USER HANDLERS
@@ -74,6 +77,65 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 	json.NewEncoder(w).Encode(user)
 }
 
+// loginUserHandler used for user login
+func (app *application) loginUserHandler(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Email string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	// decoding request in a struct
+	err := json.NewDecoder(r.Body).Decode(&input)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// validating user inputs
+	if input.Email == "" || input.Password == "" {
+		http.Error(w, "Email and Password required", http.StatusBadRequest)
+		return
+    }
+
+	// finding user
+	user, err := app.Users.GetByEmail(input.Email)
+	if err != nil {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+        return
+	}
+
+	// check password
+	match, err := user.Password.Matches(input.Password)
+	if err != nil {
+		http.Error(w, "Server error", http.StatusInternalServerError)
+		return 
+	}
+	if !match {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return 
+	}
+
+	// Generating JWT
+	claims := jwt.MapClaims{
+		"sub" : user.Id,
+		"role" : user.Role,
+		"exp" : time.Now().Add(time.Hour * 24).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	// signing the token with secret key
+	tokenString, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	if err != nil {
+		http.Error(w, "Token generation failed", http.StatusInternalServerError)
+		return
+	}
+
+	// send token
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string {
+		"token" : tokenString,
+	})
+}
 
 // JOB HANDLERS
 

@@ -61,6 +61,40 @@ type UserModel struct {
 	DB *sql.DB
 }
 
+// GetByEmail retrieves a user by their email address
+func (m UserModel) GetByEmail(email string) (*User, error) {
+	query := `
+		SELECT id, created_at, name, email, password_hash, role
+		FROM users
+		WHERE email = $1
+	`
+
+	var user User
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// executing the query
+	err := m.DB.QueryRowContext(ctx, query, email).Scan(
+		&user.Id,
+		&user.CreatedAt,
+		&user.Name,
+		&user.Email,
+		&user.Password.hash,
+		&user.Role,
+	)
+
+	// handle the user not fund
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("record not found")
+		}
+		return nil, err
+	}
+
+	return &user, nil
+}
+
 // insert adds a new user to the db
 func (m UserModel) Insert(user *User) error {
 	query := `

@@ -65,6 +65,7 @@ func main() {
 	mux.HandleFunc("POST /jobs", app.createJobHandler)
 	mux.HandleFunc("GET /jobs/{id}", app.getJobHandler)
 	mux.HandleFunc("POST /users", app.registerUserHandler)
+	mux.HandleFunc("POST /users/login", app.loginUserHandler)
 
 
 	log.Printf("Server started on port %s", port)
