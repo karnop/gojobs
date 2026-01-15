@@ -41,7 +41,7 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 	// setting the password
 	err = user.Password.Set(input.Password)
 	if err != nil {
-		http.Error(w, "Server error", http.StatusInternalServerError)
+		app.serverError(w, r, err)
 		return
 	}
 
@@ -66,7 +66,7 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 			w.WriteHeader(http.StatusConflict) // 409
 			json.NewEncoder(w).Encode(v.Errors)
 		} else {
-			http.Error(w, "Database Error", http.StatusInternalServerError)
+			app.serverError(w, r, err)
 		}
 		return
 	}
@@ -107,7 +107,7 @@ func (app *application) loginUserHandler(w http.ResponseWriter, r *http.Request)
 	// check password
 	match, err := user.Password.Matches(input.Password)
 	if err != nil {
-		http.Error(w, "Server error", http.StatusInternalServerError)
+		app.serverError(w, r, err)
 		return
 	}
 	if !match {
@@ -126,7 +126,7 @@ func (app *application) loginUserHandler(w http.ResponseWriter, r *http.Request)
 	// signing the token with secret key
 	tokenString, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
 	if err != nil {
-		http.Error(w, "Token generation failed", http.StatusInternalServerError)
+		app.serverError(w, r, err)
 		return
 	}
 
@@ -191,9 +191,16 @@ func (app *application) createJobHandler(w http.ResponseWriter, r *http.Request)
 	// QueryRow executes a query that returns exactly one row (the ID).
 	err = app.DB.QueryRow(query, job.Title, job.Description, job.Company, job.Salary, job.UserId).Scan(&job.Id)
 	if err != nil {
-		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		app.serverError(w, r, err)
 		return
 	}
+
+	// structured log
+	app.Logger.Info("Job created successfully", 
+        "job_id", job.Id, 
+        "user_id", job.UserId,
+        "title", job.Title,
+    )
 
 	// responding to the client
 	w.Header().Set("Content-Type", "application/json")
@@ -207,7 +214,7 @@ func (app *application) listJobsHandler(w http.ResponseWriter, r *http.Request) 
 	query := "SELECT id, title, description, company, salary FROM jobs"
 	rows, err := app.DB.Query(query)
 	if err != nil {
-		http.Error(w, "Database Error", http.StatusInternalServerError)
+		app.serverError(w, r, err)
 		return
 	}
 	// closing rows to free up db connection
@@ -219,7 +226,7 @@ func (app *application) listJobsHandler(w http.ResponseWriter, r *http.Request) 
 		// Scan copies the columns from the current row into the values pointed at.
 		err := rows.Scan(&j.Id, &j.Title, &j.Description, &j.Company, &j.Salary)
 		if err != nil {
-			http.Error(w, "Error scanning database row", http.StatusInternalServerError)
+			app.serverError(w, r, err)
 			return
 		}
 		jobs = append(jobs, j)
@@ -227,7 +234,7 @@ func (app *application) listJobsHandler(w http.ResponseWriter, r *http.Request) 
 
 	// errors that might have occurred during iteration
 	if err = rows.Err(); err != nil {
-		http.Error(w, "Database iteration error", http.StatusInternalServerError)
+		app.serverError(w, r, err)
 		return
 	}
 
@@ -237,7 +244,7 @@ func (app *application) listJobsHandler(w http.ResponseWriter, r *http.Request) 
 	// encoding jobs slice directly to the response writer
 	err = json.NewEncoder(w).Encode(jobs)
 	if err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		app.serverError(w, r, err)
 	}
 }
 
@@ -270,8 +277,7 @@ func (app *application) getJobHandler(w http.ResponseWriter, r *http.Request) {
 		if err == sql.ErrNoRows {
 			http.Error(w, "Job not found", http.StatusNotFound)
 		} else {
-			// log.Println(err)
-			http.Error(w, "Database error", http.StatusInternalServerError)
+			app.serverError(w, r, err)
 		}
 		return
 	}

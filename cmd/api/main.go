@@ -1,52 +1,64 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"github.com/joho/godotenv"
 	"github.com/karnop/gojobs/internal/data"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 // defining a struct to hold application dependencies
 // it makes the handlers cleaner because they can access the DB via this struct
 type application struct {
-	DB    *sql.DB
-	Users data.UserModel
+	DB     *sql.DB
+	Users  data.UserModel
+	Logger *slog.Logger
 }
 
 // entry point of the application
 func main() {
+	// initializing structured logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+
 	// loading the env file
 	err := godotenv.Load()
 	if err != nil {
-		log.Println("No .env file found, relying on system environment variables")
+		logger.Info("No .env file found, relying on system environment variables")
 	}
 
 	port := os.Getenv("port")
 	if port == "" {
-		log.Fatal("DB_DSN environment variable not set")
+		logger.Error("DB_DSN environment variable not set")
 	}
 
 	dsn := os.Getenv("DB_DSN")
 	if dsn == "" {
-		log.Fatal("DB_DSN environment variable not set")
+		logger.Error("DB_DSN environment variable not set")
 	}
-	log.Println("Connecting to Cloud Database...")
+	logger.Info("Connecting to Cloud Database...")
 
 	// calling helper function to open the connection
 	db, err := openDB(dsn)
 	if err != nil {
-		log.Fatalf("Cannot connect to database: %v", err)
+		logger.Error("Cannot connect to database", "error", err)
 	}
 	defer db.Close()
-	log.Println("SUCCESS! Database connection established")
+	logger.Info("SUCCESS! Database connection established")
 
 	app := &application{
-		DB:    db,
-		Users: data.UserModel{DB: db},
+		DB:     db,
+		Users:  data.UserModel{DB: db},
+		Logger: logger,
 	}
 
 	// NewServeMux is a request multiplier (router).
@@ -65,11 +77,60 @@ func main() {
 	mux.HandleFunc("POST /users", app.registerUserHandler)
 	mux.HandleFunc("POST /users/login", app.loginUserHandler)
 
-	log.Printf("Server started on port %s", port)
+	logger.Info("Starting server", "addr", port, "env", "development")
 
-	// ListenAndServe starts an HTTP server with a given address and handler
-	// This function blocks forever until the program is terminated
-	if err := http.ListenAndServe(port, mux); err != nil {
-		log.Fatalf("Could not start server: %s\n", err)
+	// defining the server struct
+	srv := &http.Server{
+		Addr:  ":8080",
+		Handler: mux, 
+		IdleTimeout: time.Minute,
+		ReadTimeout: 10*time.Second,
+		WriteTimeout: 30*time.Second,
 	}
+
+	// creating a specific channel to listen for shutdown signals
+	// buffered channel of size 1
+	shutdownError := make(chan error)
+
+	// starting the server in a background routine
+	go func() {
+		logger.Info("Starting server", "addr", srv.Addr, "env", "development")
+		err := srv.ListenAndServe()
+
+		// ListenAndServe always returns a non nil error
+		// If its just - ServerClosed (which happens when we shutdown), that's normal
+		if !errors.Is(err, http.ErrServerClosed) {
+			shutdownError <- err // sending real errors to the main thread
+		}
+	}()
+
+	// listening for os signals
+	// we want to catch interrupt(ctrl + c) and SIGTERM(docker/kubernetes stop)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+
+	// blocking the main thread
+	// The code stops here and waits until we receive a signal or a server error
+	select {
+	case err := <-shutdownError:
+		logger.Error("Server error", "error", err)
+		os.Exit(1)
+
+	case sig:= <-quit:
+		logger.Info("Shutting down server", "signal", sig.String())
+	}
+
+	// graceful shutdown
+	// we give active requests 5 seconds to finish
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// shutdown stops accepting new requests and waits for active ones
+	err = srv.Shutdown(ctx)
+	if err != nil {
+		logger.Error("Graceful shutdown failed", "error", err)
+        err = srv.Close() // force close
+	}
+
+	logger.Info("Server stopped")
 }
