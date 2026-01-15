@@ -132,5 +132,5 @@ func main() {
         err = srv.Close() // force close
 	}
 
-	logger.Info("Server stopped")
+	logger.Info("Server stopped")  
 }
