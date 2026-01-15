@@ -210,42 +210,39 @@ func (app *application) createJobHandler(w http.ResponseWriter, r *http.Request)
 
 // listjobshandler handles GET request to show all jobs
 func (app *application) listJobsHandler(w http.ResponseWriter, r *http.Request) {
-	// simple select
-	query := "SELECT id, title, description, company, salary FROM jobs"
-	rows, err := app.DB.Query(query)
+	var input struct {
+		Title   string
+		Company string
+		data.Filters
+	}
+
+	v := validator.New()
+
+	// parse Query Parameters
+	qs := r.URL.Query()
+
+	input.Title = app.readString(qs, "title", "")
+	input.Company = app.readString(qs, "company", "")
+	input.Filters.Page = app.readInt(qs, "page", 1, v)
+	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
+	input.Filters.Sort = app.readString(qs, "sort", "id") // Default sort by Id
+
+	// validating filters
+	input.Filters.SortSafelist = []string{"id", "title", "company", "salary", "-id", "-title", "-company", "-salary"}
+	
+	// calling db
+	jobs, err := app.Jobs.GetAll(input.Title, input.Company, input.Filters)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	// closing rows to free up db connection
-	defer rows.Close()
 
-	var jobs []data.Job
-	for rows.Next() {
-		var j data.Job
-		// Scan copies the columns from the current row into the values pointed at.
-		err := rows.Scan(&j.Id, &j.Title, &j.Description, &j.Company, &j.Salary)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		jobs = append(jobs, j)
-	}
-
-	// errors that might have occurred during iteration
-	if err = rows.Err(); err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	// setting the header
+	// sending Response
 	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"jobs": jobs,
+	})
 
-	// encoding jobs slice directly to the response writer
-	err = json.NewEncoder(w).Encode(jobs)
-	if err != nil {
-		app.serverError(w, r, err)
-	}
 }
 
 // getJobHandler fetches a single job by its Id
@@ -284,4 +281,44 @@ func (app *application) getJobHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(job)
+}
+
+// applyjobhandler POST req applies for a job 
+func (app *application) applyJobHandler(w http.ResponseWriter, r *http.Request) {
+	// get jobId from URL
+	idStr := r.PathValue("id")
+	jobId, err := strconv.Atoi(idStr)
+	if err != nil || jobId < 1 {
+		http.Error(w, "Invalid Job ID", http.StatusBadRequest)
+		return
+	}
+
+	// getting user id from Context
+	userId, ok := r.Context().Value("userId").(int)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// create the application struct
+	jobApp := &data.JobApplication{
+		JobId : jobId,
+		UserId : userId,
+	}
+
+	err = app.Applications.Insert(jobApp) 
+	if err != nil {
+		if errors.Is(err, data.ErrDuplicateApplication) {
+			app.clientError(w, http.StatusConflict) // 409 Conflict
+			// Ideally, send a JSON message: {"error": "You have already applied"}
+		} else {
+			app.serverError(w, r, err)
+		}
+		return
+	}
+
+	// success
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(jobApp)
 }

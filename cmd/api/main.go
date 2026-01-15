@@ -20,6 +20,8 @@ import (
 type application struct {
 	DB     *sql.DB
 	Users  data.UserModel
+	Applications data.JobApplicationModel
+	Jobs data.JobModel
 	Logger *slog.Logger
 }
 
@@ -58,6 +60,8 @@ func main() {
 	app := &application{
 		DB:     db,
 		Users:  data.UserModel{DB: db},
+		Applications: data.JobApplicationModel{DB: db},
+		Jobs : data.JobModel{DB: db},
 		Logger: logger,
 	}
 
@@ -76,6 +80,7 @@ func main() {
 	mux.HandleFunc("GET /jobs/{id}", app.getJobHandler)
 	mux.HandleFunc("POST /users", app.registerUserHandler)
 	mux.HandleFunc("POST /users/login", app.loginUserHandler)
+	mux.HandleFunc("POST /jobs/{id}/apply", app.authenticate(app.applyJobHandler))
 
 	logger.Info("Starting server", "addr", port, "env", "development")
 
