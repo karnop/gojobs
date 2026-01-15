@@ -82,7 +82,7 @@ func main() {
 	// defining the server struct
 	srv := &http.Server{
 		Addr:  ":8080",
-		Handler: mux, 
+		Handler: app.enableCORS(mux), 
 		IdleTimeout: time.Minute,
 		ReadTimeout: 10*time.Second,
 		WriteTimeout: 30*time.Second,

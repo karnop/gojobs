@@ -65,3 +65,23 @@ func (app *application) authenticate(next http.HandlerFunc) http.HandlerFunc {
 		next(w, r.WithContext(ctx))
 	}
 }
+
+func (app *application) enableCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// setting the headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		// handling Preflight Requests (OPTIONS)
+		// Browsers send a "test" request (OPTIONS) before the real POST request.
+		// We must answer "OK" to this test immediately.
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// passing down to the next handler
+		next.ServeHTTP(w, r)
+	})
+}
